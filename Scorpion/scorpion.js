@@ -1,4 +1,5 @@
 const fs = require('fs');
+const exifParser = require('exif-parser');
 const path = require('path');
 
 const args = process.argv.slice(2);
@@ -16,20 +17,25 @@ function loadFile(filePath) {
 
 for (const filename of args) {
     // console.log("filename: ", filename);
+      const buffer = loadFile(filename);
+    if (buffer === null) {
+        continue;
+    }
+
     if (filename.endsWith(".png")) {
-        png_show_meta(filename);
+        png_show_meta(buffer);
+    } else if (filename.toLowerCase().endsWith(".jpg") || filename.toLowerCase().endsWith(".jpeg")) {
+        jpg_show_meta(buffer);
+    } else if (filename.endsWith(".bmp")) {
+        bmp_show_meta(buffer);
+    } else if (filename.endsWith(".gif")) {
+        gif_show_meta(buffer);
     }
-    if (filename.endsWith(".jpg")) {
-      
-    }
+
 }
 
-function png_show_meta(filename) {
+function png_show_meta(buffer) {
     let position = 8; // skip the PNG signature
-    const buffer = loadFile(filename);
-    if (buffer === null) {
-        return;
-    }
 
     // iterate of the chuncks
     while (position < buffer.length) {
@@ -126,11 +132,67 @@ function display_itxt(data) {
 
 // *********** eXIf
 
-const exifParser = require('exif-parser');
-
 function display_exif(data) {
   const parser = exifParser.create(data);
   const result = parser.parse();
   console.log("eXIf: ", result.tags); // displays parsed EXIF tags
+}
+
+// *********** Other file types than PNG
+
+function parseJPEG(buffer) {
+  try {
+    const parser = exifParser.create(buffer);
+    const result = parser.parse();
+
+    let output = 'JPEG Metadata:\n';
+    for (const [key, value] of Object.entries(result.tags)) {
+      output += `  ${key}: ${value}\n`;
+    }
+    return output;
+  } catch (err) {
+    console.log(err);
+    return 'JPEG Metadata: Failed to parse EXIF data.\n';
+  }
+}
+
+function jpg_show_meta(buffer) {
+  const metadata = parseJPEG(buffer);
+  console.log("jpg metadata: ", metadata);
+}
+
+function parseGIF(buffer) {
+  if (buffer.slice(0, 6).toString() !== 'GIF89a' && buffer.slice(0, 6).toString() !== 'GIF87a') {
+    return 'GIF Metadata: Not a valid GIF.\n';
+  }
+
+  const width = buffer.readUInt16LE(6);
+  const height = buffer.readUInt16LE(8);
+  const hasGlobalColorTable = (buffer[10] & 0x80) !== 0;
+
+  return `GIF Metadata:\n  Width: ${width}\n  Height: ${height}\n  Global Color Table: ${hasGlobalColorTable}\n`;
+}
+
+function gif_show_meta(buffer) {
+  const metadata = parseGIF(buffer);
+  console.log("gif metadata: ", metadata);
+}
+
+function parseBMP(buffer) {
+  if (buffer.slice(0, 2).toString() !== 'BM') {
+    return 'BMP Metadata: Not a valid BMP.\n';
+  }
+
+  const size = buffer.readUInt32LE(2);
+  const width = buffer.readInt32LE(18);
+  const height = buffer.readInt32LE(22);
+  const bitsPerPixel = buffer.readUInt16LE(28);
+
+  return `BMP Metadata:\n  File Size: ${size} bytes\n  Width: ${width}\n  Height: ${height}\n  Bits Per Pixel: ${bitsPerPixel}\n`;
+}
+
+function bmp_show_meta(buffer) {
+  const metadata = parseBMP(buffer);
+  console.log("bmp metadata: ", metadata);
 }
 
